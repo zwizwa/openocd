@@ -146,7 +146,7 @@ static bool jtag_libusb_match_serial(libusb_device_handle *device,
 	if (strcmp(serial, alternate_serial) == 0)
 		match = true;
 	else
-		LOG_DEBUG("Device alternate serial number '%s' doesn't match requested serial '%s'",
+		LOG_INFO("Device alternate serial number '%s' doesn't match requested serial '%s'",
 				alternate_serial, serial);
 
 	free(alternate_serial);
