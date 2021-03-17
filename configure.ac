@@ -270,6 +270,10 @@ AC_ARG_ENABLE([zy1000],
   AS_HELP_STRING([--enable-zy1000], [Enable ZY1000 interface]),
   [build_zy1000=$enableval], [build_zy1000=no])
 
+AC_ARG_ENABLE([zwizwa],
+  AS_HELP_STRING([--enable-zwizwa], [Enable ZWIZWA interface]),
+  [build_zwizwa=$enableval], [build_zwizwa=no])
+
 AC_ARG_ENABLE([ioutil],
   AS_HELP_STRING([--enable-ioutil], [Enable ioutil functions - useful for standalone OpenOCD implementations]),
   [build_ioutil=$enableval], [build_ioutil=no])
@@ -502,6 +506,12 @@ AS_IF([test "x$build_zy1000" = "xyes"], [
   AC_DEFINE([BUILD_ZY1000], [0], [0 if you don't want ZY1000.])
 ])
 
+AS_IF([test "x$build_zwizwa" = "xyes"], [
+  AC_DEFINE([BUILD_ZWIZWA], [1], [1 if you want ZWIZWA.])
+], [
+  AC_DEFINE([BUILD_ZWIZWA], [0], [0 if you don't want ZWIZWA.])
+])
+
 AS_IF([test "x$build_zy1000_master" = "xyes"], [
   AC_DEFINE([BUILD_ZY1000_MASTER], [1], [1 if you want ZY1000 JTAG master registers.])
 ], [
@@ -730,6 +740,7 @@ AM_CONDITIONAL([USE_LIBFTDI], [test "x$use_libftdi" = "xyes"])
 AM_CONDITIONAL([USE_HIDAPI], [test "x$use_hidapi" = "xyes"])
 AM_CONDITIONAL([USE_LIBJAYLINK], [test "x$use_libjaylink" = "xyes"])
 AM_CONDITIONAL([TARGET64], [test "x$build_target64" = "xyes"])
+AM_CONDITIONAL([ZWIZWA], [test "x$build_zwizwa" = "xyes"])
 
 AM_CONDITIONAL([MINIDRIVER], [test "x$build_minidriver" = "xyes"])
 AM_CONDITIONAL([MINIDRIVER_DUMMY], [test "x$build_minidriver_dummy" = "xyes"])
