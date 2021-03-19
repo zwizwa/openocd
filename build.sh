@@ -8,7 +8,7 @@ cd $(dirname $0)
     --enable-ftdi \
     --enable-stlink \
     --enable-cmsis-dap \
-    --enable-zwizwa \
+    --enable-pdap \
 && \
 make -j8 \
 && \

@@ -126,8 +126,8 @@ extern struct adapter_driver aice_adapter_driver;
 #if BUILD_BCM2835GPIO == 1
 extern struct adapter_driver bcm2835gpio_adapter_driver;
 #endif
-#if BUILD_ZWIZWA == 1
-extern struct adapter_driver zwizwa_adapter_driver;
+#if BUILD_PDAP == 1
+extern struct adapter_driver pdap_adapter_driver;
 #endif
 #if BUILD_CMSIS_DAP == 1
 extern struct adapter_driver cmsis_dap_adapter_driver;
@@ -256,7 +256,7 @@ struct adapter_driver *adapter_drivers[] = {
 		&stlink_dap_adapter_driver,
 #endif
 #if BUILD_KITPROG == 1
-		&zwizwa_adapter_driver,
+		&pdap_adapter_driver,
 #endif
 #endif /* standard drivers */
 		NULL,

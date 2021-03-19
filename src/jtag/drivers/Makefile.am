@@ -163,8 +163,8 @@ endif
 if XDS110
 DRIVERFILES += %D%/xds110.c
 endif
-if ZWIZWA
-DRIVERFILES += %D%/zwizwa.c
+if PDAP
+DRIVERFILES += %D%/pdap.c
 endif
 
 DRIVERHEADERS = \
