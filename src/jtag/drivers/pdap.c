@@ -33,10 +33,10 @@ const struct command_registration pdap_command_handlers[] = {
 const char * const pdap_transports[] = { "swd", NULL };
 
 
-static FILE *dev; static const char *devname = "/dev/tty-0483-5740-55ff73065077564813521387";
-static FILE *dbg; static const char *dbgname = "/tmp/pdap.txt";
+static FILE *dev;
 
-#define DBG(...) {					\
+static FILE *dbg;
+#define DBG(...) if (dbg) {				\
 		fprintf(dbg, __VA_ARGS__);		\
 		fprintf(dbg, "\n");			\
 	}
@@ -87,9 +87,16 @@ int pdap_init(void)
 	/* Called both by swd.init (first), then adapter.init, so just
 	   make it idempotent. */
 	if (dev) return ERROR_OK;
+	const char *dbgname = getenv("PDAP_LOGFILE");
+	if (dbgname) {
+		dbg = fopen(dbgname, "w");
+	}
+	const char *devname = getenv("PDAP_TTY");
+	if (!devname) {
+		devname = "/dev/ttyACM0";
+	}
 
 	dev = fopen(devname, "r+");
-	dbg = fopen(dbgname, "w");
 	if (!dev) {
 	    LOG_ERROR("Can't open %s\n", devname);
 	    return ERROR_FAIL;
