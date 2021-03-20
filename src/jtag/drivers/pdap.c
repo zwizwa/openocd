@@ -57,7 +57,12 @@ int pdap_resp(char *buf, int len)
 	for (;;) {
 		if (i >= (len-1)) return ERROR_FAIL;
 		int c = fgetc(dev);
-		if (EOF == c) return ERROR_FAIL;
+		if (EOF == c) {
+			/* This means the device disappeared. */
+			LOG_ERROR("PDAP EOF");
+			exit(1);
+			//return ERROR_FAIL;
+		}
 		if ('\r' == c) continue;
 		if ('\n' == c) {
 			buf[i] = 0;
