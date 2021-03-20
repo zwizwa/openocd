@@ -81,7 +81,7 @@ int pdap_resp(char *buf, int len)
 static uint32_t nb_transactions;
 static int last_error;
 
-static int pdap_sync(void) {
+static int pdap_sync(int discard) {
 	int rv = ERROR_OK;
 
 	/* Just perform synchronization here to make sure we're still
@@ -89,12 +89,16 @@ static int pdap_sync(void) {
 	PDAP("%x sync", nb_transactions);
 
 	char buf[100] = {};
+
+next_line:
 	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
 		LOG_ERROR("sync read fail: '%s'", buf);
 		rv = ERROR_FAIL;
 		goto done;
 	}
 	if (strncmp("sync ", buf, 5)) {
+		if (discard) goto next_line;
+
 		LOG_ERROR("bad sync: '%s'", buf);
 		rv = ERROR_FAIL;
 		goto done;
@@ -141,7 +145,6 @@ int pdap_init(void)
 	struct termios2 tio;
 	if (0 != ioctl(devfd, TCGETS2, &tio)) return ERROR_FAIL;
 
-	// http://www.cs.uleth.ca/~holzmann/C/system/ttyraw.c
 	tio.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
 	tio.c_oflag &= ~(OPOST);
 	tio.c_cflag |= (CS8);
@@ -151,10 +154,15 @@ int pdap_init(void)
 
 	if (0 != ioctl(devfd, TCSETS2, &tio)) return ERROR_FAIL;
 
-	PDAP(" "); // discards any half command
+	/* Send empty command to discard any junk that might be on the
+	   command line.  Disable echo for machine interaction
+	   (default is on), and switch to hex mode (default is
+	   decimal.  Perform sync, discarding any non-sync lines to
+	   skip the controller startup messages. */
+	PDAP(" ");
 	PDAP("0 echo");
 	PDAP("hex");
-	return pdap_sync();
+	return pdap_sync(1);
 }
 
 int pdap_quit(void)
@@ -220,7 +228,7 @@ void pdap_swd_read_reg(uint8_t cmd, uint32_t *pval, uint32_t ap_delay_clk)
 		PDAP("%x rd drop", cmd);
 	}
 	if (ap_delay_clk) {
-		PDAP("%x ap_delay_clk", ap_delay_clk);
+		PDAP("%x idle", ap_delay_clk);
 	}
 	last_error = ERROR_OK;
 	return;
@@ -232,7 +240,7 @@ void pdap_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
 {
 	PDAP("%x %x wr", value, cmd);
 	if (ap_delay_clk) {
-		PDAP("%x ap_delay_clk", ap_delay_clk);
+		PDAP("%x idle", ap_delay_clk);
 	}
 }
 
@@ -241,7 +249,7 @@ int pdap_swd_run_queue(void)
 	int rv;
 
 	/* Make sure we're still in lock step. */
-	if (ERROR_OK == (rv = pdap_sync())) {
+	if (ERROR_OK == (rv = pdap_sync(0))) {
 		rv = last_error;
 	}
 
