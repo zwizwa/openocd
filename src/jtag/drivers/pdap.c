@@ -78,30 +78,17 @@ int pdap_resp(char *buf, int len)
 	}
 }
 
-static uint32_t **queue;
-static int32_t queue_size = 0;
-static int32_t queue_next;
 static uint32_t nb_transactions;
-
-void queue_write(uint32_t *dst) {
-	if (queue_next >= queue_size) {
-		queue_size *= 2;
-		LOG_INFO("growing queue to %d", queue_size);
-		int32_t nb_bytes = sizeof(uint32_t*) * queue_size;
-		queue = realloc(queue, nb_bytes);
-		if (!queue) exit(1);
-	}
-	queue[queue_next++] = dst;
-}
+static int last_error;
 
 int pdap_init(void)
 {
 	/* Called both by swd.init (first), then adapter.init, so just
 	   make it idempotent. */
 	if (dev) return ERROR_OK;
-	queue_size = 1024 * 16;
-	queue = malloc(sizeof(uint32_t*)*queue_size);
-	if (!queue) exit(1);
+
+	last_error = ERROR_OK;
+
 
 	const char *dbgname = getenv("PDAP_LOGFILE");
 	if (dbgname) {
@@ -180,22 +167,42 @@ int pdap_swd_switch_seq(enum swd_special_seq seq)
 	return ERROR_OK;
 }
 
-//#define LOG_ LOG_DEBUG
-#define LOG_ LOG_INFO
-
-
-void pdap_swd_read_reg(uint8_t cmd, uint32_t *value, uint32_t ap_delay_clk)
+void pdap_swd_read_reg(uint8_t cmd, uint32_t *pval, uint32_t ap_delay_clk)
 {
-	if (value) {
+	if (last_error != ERROR_OK) {
+		/* Don't continue if anything went wrong in the
+		   current queue run. */
+		return;
+	}
+	if (pval) {
+		/* 'rd' pushes to stack, 'p' prints hex number. */
 		PDAP("%x rd p", cmd);
-		queue_write(value);
+		char buf[100] = {};
+		if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
+			LOG_ERROR("value read fail: '%s'", buf);
+			goto fail;
+		}
+		if (!strncmp("error ack ", buf, 10)) {
+			uint32_t ack = strtol(buf + 10, NULL, 16);
+			LOG_ERROR("ack = %d", ack);
+			goto fail;
+		}
+		uint32_t val = strtol(buf, NULL, 16);
+		LOG_DEBUG("val = 0x%x", val);
+		*pval = val;
 	}
 	else {
+		/* 'rd' pushes to stack, 'drop' discards result
+		   without printing. */
 		PDAP("%x rd drop", cmd);
 	}
 	if (ap_delay_clk) {
 		PDAP("%x ap_delay_clk", ap_delay_clk);
 	}
+	last_error = ERROR_OK;
+	return;
+fail:
+	last_error = ERROR_FAIL;
 }
 
 void pdap_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
@@ -210,37 +217,30 @@ void pdap_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
 
 int pdap_swd_run_queue(void)
 {
-	int rv = ERROR_FAIL;
-	LOG_INFO("run %d\n", queue_next);
+
+	int rv = last_error;
+
+	/* Just perform synchronization here to make sure we're still
+	 * in lock step. */
 	PDAP("%x sync", nb_transactions);
-	/* There will be one line per read/write command, and a sync at the end. */
+
 	char buf[100] = {};
-	for (int32_t i = 0; i < queue_next; i++) {
-		if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
-			LOG_ERROR("value read fail: '%s'", buf);
-			goto fail;
-		}
-		if (!strncmp("error ack ", buf, 10)) {
-			uint32_t ack = strtol(buf + 10, NULL, 16);
-			LOG_ERROR("ack = %d", ack);
-			goto fail;
-		}
-		uint32_t val = strtol(buf, NULL, 16);
-		LOG_DEBUG("val = 0x%x", val);
-		*(queue[i]) = val;
-	}
 	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
 		LOG_ERROR("sync read fail: '%s'", buf);
-		goto fail;
+		rv = ERROR_FAIL;
+		goto done;
 	}
 	if (strncmp("sync ", buf, 5)) {
 		LOG_ERROR("bad sync: '%s'", buf);
-		goto fail;
+		rv = ERROR_FAIL;
+		goto done;
 	}
-	rv = ERROR_OK;
-fail:
+	// FIXME: Check sync number.
+done:
 	nb_transactions++;
-	queue_next = 0;
+
+	/* Set things up for the next queue run. */
+	last_error = ERROR_OK;
 	return rv;
 }
 
