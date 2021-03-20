@@ -33,14 +33,20 @@ const struct command_registration pdap_command_handlers[] = {
 const char * const pdap_transports[] = { "swd", NULL };
 
 
-static FILE *dev;
-static const char *devname = "/dev/tty-0483-5740-55ff73065077564813521387";
+static FILE *dev; static const char *devname = "/dev/tty-0483-5740-55ff73065077564813521387";
+static FILE *dbg; static const char *dbgname = "/tmp/pdap.txt";
+
+#define DBG(...) {					\
+		fprintf(dbg, __VA_ARGS__);		\
+		fprintf(dbg, "\n");			\
+	}
 
 // Newline is implied
 #define PDAP(...) {				\
-		LOG_INFO("req: " __VA_ARGS__);	\
-		fprintf(dev, __VA_ARGS__);	\
-		fprintf(dev, "\n");		\
+		/* LOG_DEBUG("req: " __VA_ARGS__); */	\
+		DBG("req: "__VA_ARGS__);		\
+		fprintf(dev, __VA_ARGS__);		\
+		fprintf(dev, "\n");			\
 	}
 
 
@@ -56,8 +62,17 @@ int pdap_resp(char *buf, int len)
 		if ('\r' == c) continue;
 		if ('\n' == c) {
 			buf[i] = 0;
-			LOG_INFO("rsp: %s", buf);
-			return i;
+			if ((len > 0) && buf[0] == '#') {
+				// Allow firmware to print out some diagnostics, which
+				// we will ignore.
+				DBG("ign: %s", buf);
+				i = 0;
+				continue;
+			}
+			else {
+				DBG("rsp: %s", buf);
+				return i;
+			}
 		}
 		buf[i++] = c;
 	}
@@ -74,6 +89,7 @@ int pdap_init(void)
 	if (dev) return ERROR_OK;
 
 	dev = fopen(devname, "r+");
+	dbg = fopen(dbgname, "w");
 	if (!dev) {
 	    LOG_ERROR("Can't open %s\n", devname);
 	    return ERROR_FAIL;
@@ -146,15 +162,20 @@ int pdap_swd_switch_seq(enum swd_special_seq seq)
 
 void pdap_swd_read_reg(uint8_t cmd, uint32_t *value, uint32_t ap_delay_clk)
 {
+	if (value) {
+		PDAP("%x rd p", cmd);
+	}
+	else {
+		PDAP("%x rd drop", cmd);
+	}
 	if (ap_delay_clk) { PDAP("%x ap_delay_clk", ap_delay_clk); }
-	PDAP("%x rd", cmd);
 	queue[queue_next++] = value;
 }
 
 void pdap_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
 {
-	if (ap_delay_clk) { PDAP("%x ap_delay_clk", ap_delay_clk); }
 	PDAP("%x %x wr", value, cmd);
+	if (ap_delay_clk) { PDAP("%x ap_delay_clk", ap_delay_clk); }
 	queue[queue_next++] = NULL;
 }
 
@@ -166,15 +187,31 @@ int pdap_swd_run_queue(void)
 	/* There will be one line per read/write command, and a sync at the end. */
 	char buf[100] = {};
 	for (int32_t i = 0; i < queue_next; i++) {
+		// LOG_INFO("queue %d %p\n", i, queue[i]);
 		if (queue[i]) {
-			if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) goto fail;
+			if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
+				LOG_ERROR("value read fail");
+				goto fail;
+			}
+			if (!strncmp("error ack ", buf, 10)) {
+				uint32_t ack = strtol(buf + 10, NULL, 16);
+				LOG_ERROR("ack = %d", ack);
+				return ERROR_FAIL;
+			}
+
 			uint32_t val = strtol(buf, NULL, 16);
-			LOG_INFO("val = 0x%x\n", val);
+			// LOG_INFO("val = 0x%x\n", val);
 			*(queue[i]) = val;
 		}
 	}
-	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) goto fail;
-	if (strncmp("sync ", buf, 5)) goto fail;
+	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
+		LOG_ERROR("sync read fail");
+		goto fail;
+	}
+	if (strncmp("sync ", buf, 5)) {
+		LOG_ERROR("bad sync: %s", buf);
+		goto fail;
+	}
 	queue_transactions++;
 	queue_next = 0;
 	return ERROR_OK;
