@@ -81,6 +81,37 @@ int pdap_resp(char *buf, int len)
 static uint32_t nb_transactions;
 static int last_error;
 
+static int pdap_sync(void) {
+	int rv = ERROR_OK;
+
+	/* Just perform synchronization here to make sure we're still
+	 * in lock step. */
+	PDAP("%x sync", nb_transactions);
+
+	char buf[100] = {};
+	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
+		LOG_ERROR("sync read fail: '%s'", buf);
+		rv = ERROR_FAIL;
+		goto done;
+	}
+	if (strncmp("sync ", buf, 5)) {
+		LOG_ERROR("bad sync: '%s'", buf);
+		rv = ERROR_FAIL;
+		goto done;
+	}
+
+	uint32_t sync = strtol(buf + 5, NULL, 16);
+	if (sync != nb_transactions) {
+		LOG_ERROR("bad sync: %d != %d", sync, nb_transactions);
+		rv = ERROR_FAIL;
+		goto done;
+	}
+done:
+	nb_transactions++;
+	return rv;
+
+}
+
 int pdap_init(void)
 {
 	/* Called both by swd.init (first), then adapter.init, so just
@@ -123,15 +154,7 @@ int pdap_init(void)
 	PDAP(" "); // discards any half command
 	PDAP("0 echo");
 	PDAP("hex");
-	PDAP("%x sync", nb_transactions++);
-	char buf[100];
-	for(;;) {
-		if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) return ERROR_FAIL;
-		if (!strncmp("sync ", buf, 5)) break;
-	}
-	LOG_INFO("PDAP sync ok");
-
-	return ERROR_OK;
+	return pdap_sync();
 }
 
 int pdap_quit(void)
@@ -213,31 +236,14 @@ void pdap_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
 	}
 }
 
-
-
 int pdap_swd_run_queue(void)
 {
+	int rv;
 
-	int rv = last_error;
-
-	/* Just perform synchronization here to make sure we're still
-	 * in lock step. */
-	PDAP("%x sync", nb_transactions);
-
-	char buf[100] = {};
-	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
-		LOG_ERROR("sync read fail: '%s'", buf);
-		rv = ERROR_FAIL;
-		goto done;
+	/* Make sure we're still in lock step. */
+	if (ERROR_OK == (rv = pdap_sync())) {
+		rv = last_error;
 	}
-	if (strncmp("sync ", buf, 5)) {
-		LOG_ERROR("bad sync: '%s'", buf);
-		rv = ERROR_FAIL;
-		goto done;
-	}
-	// FIXME: Check sync number.
-done:
-	nb_transactions++;
 
 	/* Set things up for the next queue run. */
 	last_error = ERROR_OK;
