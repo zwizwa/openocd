@@ -86,7 +86,7 @@ static uint32_t nb_transactions;
 void queue_write(uint32_t *dst) {
 	if (queue_next >= queue_size) {
 		queue_size *= 2;
-		LOG_INFO("growing queue to %d\n", queue_size);
+		LOG_INFO("growing queue to %d", queue_size);
 		int32_t nb_bytes = sizeof(uint32_t*) * queue_size;
 		queue = realloc(queue, nb_bytes);
 		if (!queue) exit(1);
@@ -99,7 +99,7 @@ int pdap_init(void)
 	/* Called both by swd.init (first), then adapter.init, so just
 	   make it idempotent. */
 	if (dev) return ERROR_OK;
-	queue_size = 1024;
+	queue_size = 1024 * 16;
 	queue = malloc(sizeof(uint32_t*)*queue_size);
 	if (!queue) exit(1);
 
@@ -114,10 +114,10 @@ int pdap_init(void)
 
 	dev = fopen(devname, "r+");
 	if (!dev) {
-	    LOG_ERROR("Can't open %s\n", devname);
+	    LOG_ERROR("Can't open %s", devname);
 	    return ERROR_FAIL;
 	}
-	LOG_INFO("PDAP device %s\n", devname);
+	LOG_INFO("PDAP device %s", devname);
 	int devfd = fileno(dev);
 
 	struct termios2 tio;
@@ -211,6 +211,7 @@ void pdap_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
 int pdap_swd_run_queue(void)
 {
 	int rv = ERROR_FAIL;
+	LOG_INFO("run %d\n", queue_next);
 	PDAP("%x sync", nb_transactions);
 	/* There will be one line per read/write command, and a sync at the end. */
 	char buf[100] = {};
@@ -225,7 +226,7 @@ int pdap_swd_run_queue(void)
 			goto fail;
 		}
 		uint32_t val = strtol(buf, NULL, 16);
-		LOG_DEBUG("val = 0x%x\n", val);
+		LOG_DEBUG("val = 0x%x", val);
 		*(queue[i]) = val;
 	}
 	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
