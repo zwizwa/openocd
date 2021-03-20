@@ -203,6 +203,24 @@ int pdap_swd_switch_seq(enum swd_special_seq seq)
 	return ERROR_OK;
 }
 
+int pdap_read_resp(uint32_t *pval) {
+	char buf[100] = {};
+	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
+		LOG_ERROR("value read fail: '%s'", buf);
+		return ERROR_FAIL;
+	}
+	if (!strncmp("error ack ", buf, 10)) {
+		uint32_t ack = strtol(buf + 10, NULL, 16);
+		LOG_ERROR("ack = %d", ack);
+		return ERROR_FAIL;
+	}
+	uint32_t val = strtol(buf, NULL, 16);
+	LOG_DEBUG("val = 0x%x", val);
+	*pval = val;
+	return ERROR_OK;
+}
+
+
 void pdap_swd_read_reg(uint8_t cmd, uint32_t *pval, uint32_t ap_delay_clk)
 {
 	if (last_error != ERROR_OK) {
@@ -213,19 +231,9 @@ void pdap_swd_read_reg(uint8_t cmd, uint32_t *pval, uint32_t ap_delay_clk)
 	if (pval) {
 		/* 'rd' pushes to stack, 'p' prints hex number. */
 		PDAP("%x rd p", cmd);
-		char buf[100] = {};
-		if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
-			LOG_ERROR("value read fail: '%s'", buf);
+		if (ERROR_OK != pdap_read_resp(pval)) {
 			goto fail;
 		}
-		if (!strncmp("error ack ", buf, 10)) {
-			uint32_t ack = strtol(buf + 10, NULL, 16);
-			LOG_ERROR("ack = %d", ack);
-			goto fail;
-		}
-		uint32_t val = strtol(buf, NULL, 16);
-		LOG_DEBUG("val = 0x%x", val);
-		*pval = val;
 	}
 	else {
 		/* 'rd' pushes to stack, 'drop' discards result
