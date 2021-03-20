@@ -43,7 +43,7 @@ static FILE *dbg;
 
 #define PDAP(...) {				\
 		/* LOG_DEBUG("req: " __VA_ARGS__); */	\
-		DBG("req: "__VA_ARGS__);		\
+		DBG("  "__VA_ARGS__);		\
 		fprintf(dev, __VA_ARGS__);		\
 		fprintf(dev, "\n");			\
 	}
@@ -63,14 +63,14 @@ int pdap_resp(char *buf, int len)
 			buf[i] = 0;
 			if ((len > 0) && buf[0] == '#') {
 				// Pass on firmware diagnostics.
-				DBG("ign: %s", buf);
+				DBG("< %s", buf);
 				LOG_INFO("%s", buf);
 				i = 0;
 				buf[0] = 0;
 				continue;
 			}
 			else {
-				DBG("rsp: %s", buf);
+				DBG(". %s", buf);
 				return i;
 			}
 		}
