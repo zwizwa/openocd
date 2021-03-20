@@ -41,7 +41,6 @@ static FILE *dbg;
 		fprintf(dbg, "\n");			\
 	}
 
-// Newline is implied
 #define PDAP(...) {				\
 		/* LOG_DEBUG("req: " __VA_ARGS__); */	\
 		DBG("req: "__VA_ARGS__);		\
@@ -63,10 +62,11 @@ int pdap_resp(char *buf, int len)
 		if ('\n' == c) {
 			buf[i] = 0;
 			if ((len > 0) && buf[0] == '#') {
-				// Allow firmware to print out some diagnostics, which
-				// we will ignore.
+				// Pass on firmware diagnostics.
 				DBG("ign: %s", buf);
+				LOG_INFO("%s", buf);
 				i = 0;
+				buf[0] = 0;
 				continue;
 			}
 			else {
@@ -78,15 +78,31 @@ int pdap_resp(char *buf, int len)
 	}
 }
 
-static uint32_t *queue[1024]; // FIXME
+static uint32_t **queue;
+static int32_t queue_size = 0;
 static int32_t queue_next;
-static uint32_t queue_transactions;
+static uint32_t nb_transactions;
+
+void queue_write(uint32_t *dst) {
+	if (queue_next >= queue_size) {
+		queue_size *= 2;
+		LOG_INFO("growing queue to %d\n", queue_size);
+		int32_t nb_bytes = sizeof(uint32_t*) * queue_size;
+		queue = realloc(queue, nb_bytes);
+		if (!queue) exit(1);
+	}
+	queue[queue_next++] = dst;
+}
 
 int pdap_init(void)
 {
 	/* Called both by swd.init (first), then adapter.init, so just
 	   make it idempotent. */
 	if (dev) return ERROR_OK;
+	queue_size = 1024;
+	queue = malloc(sizeof(uint32_t*)*queue_size);
+	if (!queue) exit(1);
+
 	const char *dbgname = getenv("PDAP_LOGFILE");
 	if (dbgname) {
 		dbg = fopen(dbgname, "w");
@@ -120,7 +136,7 @@ int pdap_init(void)
 	PDAP(" "); // discards any half command
 	PDAP("0 echo");
 	PDAP("hex");
-	PDAP("%x sync", queue_transactions++);
+	PDAP("%x sync", nb_transactions++);
 	char buf[100];
 	for(;;) {
 		if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) return ERROR_FAIL;
@@ -139,7 +155,8 @@ int pdap_quit(void)
 /* (1) assert or (0) deassert reset lines */
 int pdap_reset(int trst, int srst)
 {
-	PDAP("%x trst %x srst", trst, srst);
+	// needs: reset_config srst_only
+	PDAP("%x srst", srst);
 	return ERROR_OK;
 }
 
@@ -171,62 +188,59 @@ void pdap_swd_read_reg(uint8_t cmd, uint32_t *value, uint32_t ap_delay_clk)
 {
 	if (value) {
 		PDAP("%x rd p", cmd);
+		queue_write(value);
 	}
 	else {
 		PDAP("%x rd drop", cmd);
 	}
-	if (ap_delay_clk) { PDAP("%x ap_delay_clk", ap_delay_clk); }
-	queue[queue_next++] = value;
+	if (ap_delay_clk) {
+		PDAP("%x ap_delay_clk", ap_delay_clk);
+	}
 }
 
 void pdap_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
 {
 	PDAP("%x %x wr", value, cmd);
-	if (ap_delay_clk) { PDAP("%x ap_delay_clk", ap_delay_clk); }
-	queue[queue_next++] = NULL;
+	if (ap_delay_clk) {
+		PDAP("%x ap_delay_clk", ap_delay_clk);
+	}
 }
 
 
 
 int pdap_swd_run_queue(void)
 {
-	PDAP("%x sync", queue_transactions);
+	int rv = ERROR_FAIL;
+	PDAP("%x sync", nb_transactions);
 	/* There will be one line per read/write command, and a sync at the end. */
 	char buf[100] = {};
 	for (int32_t i = 0; i < queue_next; i++) {
-		// LOG_INFO("queue %d %p\n", i, queue[i]);
-		if (queue[i]) {
-			if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
-				LOG_ERROR("value read fail");
-				goto fail;
-			}
-			if (!strncmp("error ack ", buf, 10)) {
-				uint32_t ack = strtol(buf + 10, NULL, 16);
-				LOG_ERROR("ack = %d", ack);
-				return ERROR_FAIL;
-			}
-
-			uint32_t val = strtol(buf, NULL, 16);
-			// LOG_INFO("val = 0x%x\n", val);
-			*(queue[i]) = val;
+		if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
+			LOG_ERROR("value read fail: '%s'", buf);
+			goto fail;
 		}
+		if (!strncmp("error ack ", buf, 10)) {
+			uint32_t ack = strtol(buf + 10, NULL, 16);
+			LOG_ERROR("ack = %d", ack);
+			goto fail;
+		}
+		uint32_t val = strtol(buf, NULL, 16);
+		LOG_DEBUG("val = 0x%x\n", val);
+		*(queue[i]) = val;
 	}
 	if (ERROR_FAIL == pdap_resp(buf, sizeof(buf))) {
-		LOG_ERROR("sync read fail");
+		LOG_ERROR("sync read fail: '%s'", buf);
 		goto fail;
 	}
 	if (strncmp("sync ", buf, 5)) {
-		LOG_ERROR("bad sync: %s", buf);
+		LOG_ERROR("bad sync: '%s'", buf);
 		goto fail;
 	}
-	queue_transactions++;
-	queue_next = 0;
-	return ERROR_OK;
+	rv = ERROR_OK;
 fail:
-	LOG_ERROR("fail: %s\n", buf);
-	queue_transactions++;
+	nb_transactions++;
 	queue_next = 0;
-	return ERROR_FAIL;
+	return rv;
 }
 
 
