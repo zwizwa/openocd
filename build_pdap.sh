@@ -3,6 +3,7 @@ cd $(dirname $0)
 ./bootstrap \
 && \
 ./configure \
+    --prefix=$(readlink -f .) \
     --enable-verbose \
     --enable-pdap \
 && \
