@@ -39,6 +39,7 @@ static FILE *dbg;
 #define DBG(...) if (dbg) {				\
 		fprintf(dbg, __VA_ARGS__);		\
 		fprintf(dbg, "\n");			\
+		fflush(dbg);				\
 	}
 
 #define PDAP(...) {				\
@@ -70,6 +71,10 @@ int pdap_resp(char *buf, int len)
 				// Pass on firmware diagnostics.
 				DBG("< %s", buf);
 				LOG_INFO("%s", buf);
+				if (!strncmp("# ack", buf, 5)) {
+					// For now this probably means a bug...
+					exit(1);
+				}
 				i = 0;
 				buf[0] = 0;
 				continue;
@@ -231,9 +236,6 @@ void pdap_swd_read_reg(uint8_t cmd, uint32_t *pval, uint32_t ap_delay_clk)
 	if (pval) {
 		/* 'rd' pushes to stack, 'p' prints hex number. */
 		PDAP("%x rd p", cmd);
-		if (ERROR_OK != pdap_read_resp(pval)) {
-			goto fail;
-		}
 	}
 	else {
 		/* 'rd' pushes to stack, 'drop' discards result
@@ -242,6 +244,12 @@ void pdap_swd_read_reg(uint8_t cmd, uint32_t *pval, uint32_t ap_delay_clk)
 	}
 	if (ap_delay_clk) {
 		PDAP("%x idle", ap_delay_clk);
+	}
+	fflush(dev);
+	if (pval) {
+		if (ERROR_OK != pdap_read_resp(pval)) {
+			goto fail;
+		}
 	}
 	last_error = ERROR_OK;
 	return;
@@ -255,6 +263,7 @@ void pdap_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay_clk)
 	if (ap_delay_clk) {
 		PDAP("%x idle", ap_delay_clk);
 	}
+	fflush(dev);
 }
 
 int pdap_swd_run_queue(void)
