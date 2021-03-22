@@ -3,7 +3,7 @@ cd $(dirname $0)
 ./bootstrap \
 && \
 ./configure \
-    --prefix=. \
+    --prefix=/nix/exo \
     --enable-verbose \
     --enable-ftdi \
     --enable-stlink \
