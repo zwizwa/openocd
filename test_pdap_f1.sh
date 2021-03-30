@@ -1,6 +1,7 @@
 #!/bin/bash
+set -e
 OPENOCD=$(readlink -f $(dirname $0)/src/openocd)
-cd tcl
+cd $(dirname $0)/tcl
 export PDAP_LOGFILE=/tmp/pdap.txt
 export PDAP_TTY=/dev/tty-0483-5740-55ff73065077564813521387
 exec gdb \
